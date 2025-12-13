@@ -3,7 +3,7 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
-#include <vector>
+#include <sstream>
 
 // Глобальные переменные
 std::mutex mtx;
@@ -33,6 +33,13 @@ std::atomic<bool> cook_quit(false);
 // Время работы (5 дней = 5 секунд)
 const int WORK_DAYS = 5;
 
+// Функция для преобразования числа в строку
+std::string int_to_string(int value) {
+    std::stringstream ss;
+    ss << value;
+    return ss.str();
+}
+
 // Функция для безопасного вывода
 void safe_print(const std::string& message) {
     std::lock_guard<std::mutex> lock(cout_mtx);
@@ -42,47 +49,47 @@ void safe_print(const std::string& message) {
 // Функция повара
 void cook(int efficiency_factor) {
     auto start_time = std::chrono::steady_clock::now();
-    
+
     while (true) {
         // Проверяем прошло ли 5 дней
         auto current_time = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
-        
+
         if (elapsed >= WORK_DAYS) {
             cook_quit = true;
             safe_print("Кук: Устал! Увольняюсь сам! (прошло 5 дней)");
             return;
         }
-        
+
         // Ждем разрешения выкладывать еду
         while (!cook_can_serve) {
             std::this_thread::yield();
         }
-        
+
         std::lock_guard<std::mutex> lock(mtx);
-        
+
         // Выкладываем наггетсы
         dish1 += efficiency_factor;
         dish2 += efficiency_factor;
         dish3 += efficiency_factor;
-        
-        safe_print("Кук выложил по " + std::to_string(efficiency_factor) + 
-                   " наггетсов. Тарелки: " + std::to_string(dish1) + ", " + 
-                   std::to_string(dish2) + ", " + std::to_string(dish3));
-        
+
+        safe_print("Кук выложил по " + int_to_string(efficiency_factor) +
+            " наггетсов. Тарелки: " + int_to_string(dish1) + ", " +
+            int_to_string(dish2) + ", " + int_to_string(dish3));
+
         // Разрешаем толстякам есть
         cook_can_serve = false;
         fatman1_can_eat = true;
         fatman2_can_eat = true;
         fatman3_can_eat = true;
-        
+
         // Проверяем условие увольнения
         if (dish1 <= 0 || dish2 <= 0 || dish3 <= 0) {
             cook_fired = true;
             safe_print("Кук: Меня уволили! Одна из тарелок пуста!");
             return;
         }
-        
+
         // Небольшая пауза между циклами
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -95,47 +102,50 @@ void fatman(int fatman_id, int* dish, int* eaten, int gluttony, std::atomic<bool
         if (cook_fired || cook_quit || cook_no_salary) {
             return;
         }
-        
+
         // Проверяем, не съели ли слишком много
         if (*eaten > 10000) {
-            safe_print("Толстяк " + std::to_string(fatman_id) + " лопнул! Съел " + 
-                       std::to_string(*eaten) + " наггетсов");
+            safe_print("Толстяк " + int_to_string(fatman_id) + " лопнул! Съел " +
+                int_to_string(*eaten) + " наггетсов");
             return;
         }
-        
+
         // Ждем разрешения есть
         while (!can_eat) {
             std::this_thread::yield();
         }
-        
+
         std::lock_guard<std::mutex> lock(mtx);
-        
+
         // Едим наггетсы
-        int to_eat = std::min(gluttony, *dish);
+        int to_eat = gluttony;
+        if (to_eat > *dish) {
+            to_eat = *dish;
+        }
         *dish -= to_eat;
         *eaten += to_eat;
-        
+
         if (to_eat > 0) {
-            safe_print("Толстяк " + std::to_string(fatman_id) + " съел " + 
-                       std::to_string(to_eat) + " наггетсов. Осталось в тарелке: " + 
-                       std::to_string(*dish) + ", всего съедено: " + std::to_string(*eaten));
+            safe_print("Толстяк " + int_to_string(fatman_id) + " съел " +
+                int_to_string(to_eat) + " наггетсов. Осталось в тарелке: " +
+                int_to_string(*dish) + ", всего съедено: " + int_to_string(*eaten));
         }
-        
+
         // Сигнализируем, что поел
         can_eat = false;
-        
+
         // Если все толстяки поели, разрешаем повару работать
         if (!fatman1_can_eat && !fatman2_can_eat && !fatman3_can_eat) {
             cook_can_serve = true;
         }
-        
+
         // Проверяем условие "не получил зарплату"
         if (eaten1 > 10000 && eaten2 > 10000 && eaten3 > 10000) {
             cook_no_salary = true;
             safe_print("Все толстяки лопнули! Кук не получит зарплату!");
             return;
         }
-        
+
         // Небольшая пауза между циклами
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -145,74 +155,72 @@ void fatman(int fatman_id, int* dish, int* eaten, int gluttony, std::atomic<bool
 void run_simulation(int efficiency_factor, int gluttony, const std::string& scenario_name) {
     std::cout << "\n=========================================" << std::endl;
     std::cout << "Сценарий: " << scenario_name << std::endl;
-    std::cout << "Параметры: efficiency_factor = " << efficiency_factor 
-              << ", gluttony = " << gluttony << std::endl;
+    std::cout << "Параметры: efficiency_factor = " << efficiency_factor
+        << ", gluttony = " << gluttony << std::endl;
     std::cout << "=========================================" << std::endl;
-    
+
     // Сбрасываем глобальные переменные
     dish1 = dish2 = dish3 = 3000;
     eaten1 = eaten2 = eaten3 = 0;
     cook_can_serve = true;
     fatman1_can_eat = fatman2_can_eat = fatman3_can_eat = false;
     cook_fired = cook_no_salary = cook_quit = false;
-    
+
     // Запускаем потоки
     std::thread cook_thread(cook, efficiency_factor);
     std::thread fatman1(fatman, 1, &dish1, &eaten1, gluttony, std::ref(fatman1_can_eat));
     std::thread fatman2(fatman, 2, &dish2, &eaten2, gluttony, std::ref(fatman2_can_eat));
     std::thread fatman3(fatman, 3, &dish3, &eaten3, gluttony, std::ref(fatman3_can_eat));
-    
+
     // Ждем завершения потоков
     cook_thread.join();
     fatman1.join();
     fatman2.join();
     fatman3.join();
-    
+
     // Выводим результат
     std::cout << "\nИтоги сценария \"" << scenario_name << "\":" << std::endl;
     std::cout << "Съедено: Т1=" << eaten1 << ", Т2=" << eaten2 << ", Т3=" << eaten3 << std::endl;
     std::cout << "Осталось в тарелках: " << dish1 << ", " << dish2 << ", " << dish3 << std::endl;
-    
+
     if (cook_fired) {
         std::cout << "Результат: Кука уволили!" << std::endl;
-    } else if (cook_no_salary) {
+    }
+    else if (cook_no_salary) {
         std::cout << "Результат: Кук не получил зарплату!" << std::endl;
-    } else if (cook_quit) {
+    }
+    else if (cook_quit) {
         std::cout << "Результат: Кук уволился сам!" << std::endl;
-    } else {
+    }
+    else {
         std::cout << "Результат: Не определен!" << std::endl;
     }
     std::cout << "=========================================\n" << std::endl;
-    
+
     // Пауза между симуляциями
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
 int main() {
+    setlocale(LC_ALL, "rus");
     std::cout << "ЛАБОРАТОРНАЯ РАБОТА: ТОЛСТЯКИ И КУК" << std::endl;
     std::cout << "=========================================\n" << std::endl;
-    
+
     // Сценарий 1: Кука уволили (слишком медленный повар)
-    // Толстяки едят быстрее, чем повар успевает готовить
     run_simulation(1, 50, "Кука уволили");
-    
+
     // Сценарий 2: Кук не получил зарплату (толстяки лопнули)
-    // Толстяки очень прожорливые и быстро превышают 10000
     run_simulation(50, 100, "Кук не получил зарплату");
-    
+
     // Сценарий 3: Кук уволился сам (прошли 5 дней)
-    // Баланс между приготовлением и поеданием
     run_simulation(5, 5, "Кук уволился сам");
-    
-    // Дополнительный сценарий для демонстрации
-    run_simulation(10, 2, "Демонстрация баланса");
-    
+
     std::cout << "\n=========================================" << std::endl;
     std::cout << "ВЫВОДЫ:" << std::endl;
-    std::cout << "1. При efficiency_factor << gluttony - Кука увольняют" << std::endl;
-    std::cout << "2. При gluttony >> efficiency_factor - толстяки лопаются" << std::endl;
-    std::cout << "3. При сбалансированных значениях - Кук работает 5 дней" << std::endl;
+    std::cout << "1. efficiency_factor=1, gluttony=50 -> Кука увольняют" << std::endl;
+    std::cout << "2. efficiency_factor=50, gluttony=100 -> толстяки лопаются" << std::endl;
+    std::cout << "3. efficiency_factor=5, gluttony=5 -> Кук работает 5 дней" << std::endl;
     std::cout << "=========================================" << std::endl;
-    
+
     return 0;
 }
