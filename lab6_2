@@ -1,0 +1,170 @@
+#include <iostream>
+#include <coroutine>
+#include <chrono>
+#include <thread>
+#include <string>
+#include <iomanip>
+#include <vector>
+
+// ============================================
+// ОБЪЯВЛЕНИЕ ПРОМИСА ДЛЯ КОРУТИНЫ
+// ============================================
+
+struct PromiseType {
+    int current_value = 0;  // Текущий прогресс
+
+    auto get_return_object() {
+        return std::coroutine_handle<PromiseType>::from_promise(*this);
+    }
+
+    std::suspend_always initial_suspend() { return {}; }
+    std::suspend_always final_suspend() noexcept { return {}; }
+    void return_void() {}
+    void unhandled_exception() {}
+
+    std::suspend_always yield_value(int value) {
+        current_value = value;
+        return {};
+    }
+};
+
+// ============================================
+// ТИП ЗАДАЧИ ДЛЯ КОРУТИНЫ
+// ============================================
+
+struct Task {
+    std::coroutine_handle<PromiseType> handle;
+
+    // Конструктор по умолчанию
+    Task() : handle(nullptr) {}
+
+    // Конструктор из handle
+    Task(std::coroutine_handle<PromiseType> h) : handle(h) {}
+
+    ~Task() {
+        if (handle) handle.destroy();
+    }
+
+    void resume() {
+        if (handle) handle.resume();
+    }
+
+    bool done() const {
+        return !handle || handle.done();
+    }
+
+    int get_value() const {
+        return handle.promise().current_value;
+    }
+};
+
+// ============================================
+// СПЕЦИАЛИЗАЦИЯ ДЛЯ РАБОТЫ С КОРУТИНАМИ
+// ============================================
+
+namespace std {
+    // Для функции simulate_work(int, const std::string&)
+    template<>
+    struct coroutine_traits<Task, int, const std::string&> {
+        using promise_type = PromiseType;
+    };
+}
+
+// ============================================
+// ФУНКЦИЯ ДЛЯ ОТРИСОВКИ ПРОГРЕССБАРА
+// ============================================
+
+void print_progress_bar(int progress, int total, const std::string& name) {
+    const int bar_width = 50;
+    float percentage = static_cast<float>(progress) / total;
+    int pos = static_cast<int>(bar_width * percentage);
+
+    std::cout << "\r[";
+
+    // Заполняем прогрессбар символами имени
+    for (int i = 0; i < bar_width; ++i) {
+        if (i < pos) {
+            // Используем символы имени для заполнения прогресса
+            std::cout << name[i % name.length()];
+        }
+        else {
+            std::cout << " ";
+        }
+    }
+
+    std::cout << "] " << std::setw(3) << static_cast<int>(percentage * 100.0) << "%";
+    std::cout.flush();
+}
+
+// ============================================
+// КОРУТИНА С ИМИТАЦИЕЙ РАБОТЫ
+// ============================================
+
+Task simulate_work(int steps, const std::string& worker_name) {
+    for (int i = 1; i <= steps; ++i) {
+        // Возвращаем текущий прогресс
+        co_yield i;
+
+        // Имитация работы (задержка)
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    co_return;
+}
+
+// ============================================
+// ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ЗАПУСКА КОРУТИНЫ
+// ============================================
+
+void run_coroutine_progress(const std::string& name, int steps) {
+    std::cout << "\nПрогрессбар с именем: \"" << name << "\"\n";
+
+    Task coro = simulate_work(steps, name);
+
+    while (!coro.done()) {
+        coro.resume();
+
+        if (!coro.done()) {
+            int progress = coro.get_value();
+            print_progress_bar(progress, steps, name);
+        }
+    }
+
+    std::cout << "\n";
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+}
+
+// ============================================
+// ГЛАВНАЯ ФУНКЦИЯ
+// ============================================
+
+int main() {
+    setlocale(LC_ALL, "rus");
+    std::cout << "=== ПУНКТ 2: Прогрессбар с именем ===\n";
+
+    const int total_steps = 20;
+    const std::string my_name = "АРТЁМ";
+
+    std::cout << "\nЗапуск задачи с прогрессбаром из имени: \"" << my_name << "\"\n";
+    std::cout << "Всего шагов: " << total_steps << "\n\n";
+
+    // Создаем и запускаем корутину
+    Task coro = simulate_work(total_steps, my_name);
+
+    // Главный цикл прогрессбара
+    while (!coro.done()) {
+        coro.resume();
+
+        if (!coro.done()) {
+            int current_progress = coro.get_value();
+            print_progress_bar(current_progress, total_steps, my_name);
+        }
+    }
+
+    // Завершающая строка
+    std::cout << "\n\nЗадача завершена! Прогрессбар заполнен символами имени \""
+        << my_name << "\"\n";
+
+
+    return 0;
+}
