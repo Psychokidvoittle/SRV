@@ -1,0 +1,92 @@
+#include <iostream>
+#include <coroutine>
+#include <string>
+
+// Пример из cppreference.com
+struct promise;
+
+struct coroutine : std::coroutine_handle<promise> {
+    using promise_type = ::promise;
+};
+
+struct promise {
+    coroutine get_return_object() {
+        return { coroutine::from_promise(*this) };
+    }
+    std::suspend_always initial_suspend() noexcept { return {}; }
+    std::suspend_always final_suspend() noexcept { return {}; }
+    void return_void() {}
+    void unhandled_exception() {}
+};
+
+struct S {
+    int i;
+    coroutine f() {
+        std::cout << i << " (мой номер: 42)\n"; // Изменили число на 42
+        co_return;
+    }
+};
+
+void bad1() {
+    coroutine h = S{ 0 }.f();
+    // S{0} уничтожен
+    h.resume(); // возобновляем корутину: undefined behavior
+    h.destroy();
+}
+
+coroutine bad2() {
+    S s{ 0 };
+    return s.f(); // возвращаем корутину, привязанную к локальному s
+}
+
+void bad3() {
+    coroutine h = [i = 0]() -> coroutine { // лямбда, которая тоже является корутиной
+        std::cout << i << " (из лямбды: 99)\n"; // Изменили число на 99
+        co_return;
+        }(); // вызываем лямбду немедленно
+    // лямбда уничтожена
+    h.resume(); // undefined behavior
+    h.destroy();
+}
+
+void good() {
+    coroutine h = [](int i) -> coroutine {
+        std::cout << i << " (корректное число: 777)\n"; // Изменили число на 777
+        co_return;
+        }(0);
+    // лямбда уничтожена
+    h.resume(); // OK
+    h.destroy();
+}
+
+int main() {
+    setlocale(LC_ALL, "rus");
+    std::cout << "=== ПУНКТ 1: Пример из документации с измененными числами ===\n";
+
+    // Вызываем различные функции
+    std::cout << "\n1. Функция good() - корректное использование:\n";
+    good();
+
+    std::cout << "\n2. Функция bad1() - некорректное использование:\n";
+    std::cout << "(Может вызвать undefined behavior)\n";
+    bad1();
+
+    std::cout << "\n3. Прямой вызов корутины:\n";
+    coroutine h = [](int num) -> coroutine {
+        std::cout << "Переданное число: " << num << " (умножено на 2: " << num * 2 << ")\n";
+        co_return;
+        }(21); // Передаем число 21
+
+    h.resume();
+    h.destroy();
+
+    std::cout << "\n4. Создание и использование корутины с классом:\n";
+    {
+        S s{ 100 };
+        coroutine coro = s.f();
+        coro.resume();
+        coro.destroy();
+    }
+
+    return 0;
+}
