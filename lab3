@@ -4,11 +4,12 @@
 #include <string>
 #include <atomic>
 
-int coins = 101;
+int coins = 1;  // Можете менять на любое количество
 int Bob_coins = 0;
 int Tom_coins = 0;
 std::mutex mtx;
-std::atomic<bool> bob_turn(true);  // Используем atomic для потокобезопасности
+std::atomic<bool> bob_turn(true);
+std::atomic<int> total_coins;  
 
 void coin_sharing(std::string name, int& thief_coins, int& companion_coins, bool is_bob) {
     while (true) {
@@ -22,17 +23,21 @@ void coin_sharing(std::string name, int& thief_coins, int& companion_coins, bool
         bool my_turn = is_bob ? bob_turn.load() : !bob_turn.load();
 
         if (my_turn && coins > 0) {
-            if (coins == 1) {
+            int current_coin_number = total_coins.load() - coins + 1;
+
+            if (coins == 1 && (total_coins.load() % 2 == 1)) {
                 coins--;
                 std::cout << name << " отдает последнюю монету покойнику" << std::endl;
-                break;
             }
+            else {
+                // Обычная монета
+                coins--;
+                thief_coins++;
 
-            coins--;
-            thief_coins++;
-
-            std::cout << name << " взял монету. Боб: " << Bob_coins
-                << ", Том: " << Tom_coins << ", Осталось: " << coins << std::endl;
+                std::cout << name << " взял монету (" << current_coin_number
+                    << " из " << total_coins << "). Боб: " << Bob_coins
+                    << ", Том: " << Tom_coins << ", Осталось: " << coins << std::endl;
+            }
 
             // Переключаем очередь
             bob_turn = !bob_turn;
@@ -41,10 +46,13 @@ void coin_sharing(std::string name, int& thief_coins, int& companion_coins, bool
 }
 
 int main() {
+    setlocale(LC_ALL, "Russian");
+
+    total_coins = coins;  // Сохраняем общее количество
+
     std::cout << "Начало дележа " << coins << " монет" << std::endl;
     std::cout << "=====================================" << std::endl;
-    setlocale(LC_ALL, "Russian");
-    // Упрощаем - передаем только флаг, кто есть кто
+
     std::thread bob_thread(coin_sharing, "Боб", std::ref(Bob_coins), std::ref(Tom_coins), true);
     std::thread tom_thread(coin_sharing, "Том", std::ref(Tom_coins), std::ref(Bob_coins), false);
 
@@ -55,8 +63,10 @@ int main() {
     std::cout << "Итог дележа:" << std::endl;
     std::cout << "У Боба: " << Bob_coins << " монет" << std::endl;
     std::cout << "У Тома: " << Tom_coins << " монет" << std::endl;
-    std::cout << "Покойнику: " << (101 - Bob_coins - Tom_coins) << " монет" << std::endl;
-    std::cout << "Всего монет: " << (Bob_coins + Tom_coins + (101 - Bob_coins - Tom_coins)) << std::endl;
+
+    int dead_coins = total_coins.load() - Bob_coins - Tom_coins;
+    std::cout << "Покойнику: " << dead_coins << " монет" << std::endl;
+    std::cout << "Всего монет: " << (Bob_coins + Tom_coins + dead_coins) << std::endl;
 
     return 0;
 }
